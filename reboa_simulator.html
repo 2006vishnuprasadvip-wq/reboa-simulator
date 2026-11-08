@@ -1,0 +1,1846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AORTA-GUARD // REBOA Autonomous Clinical Advisory & Hemodynamic Simulator</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for medical & UI iconography -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Inter and Orbitron for ICU telemetry font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        icu: {
+                            bg: '#070b12',
+                            panel: '#0e1626',
+                            border: '#1f2e4d',
+                            red: '#ef4444',
+                            amber: '#f59e0b',
+                            green: '#10b981',
+                            cyan: '#06b6d4',
+                            neonPink: '#f43f5e',
+                            waveform: '#38bdf8'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                        telemetry: ['Chakra Petch', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom scrollbar and animations */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0f1d;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #334155;
+        }
+        .glow-red {
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.45);
+        }
+        .glow-amber {
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.45);
+        }
+        .glow-cyan {
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.45);
+        }
+        .animate-pulse-slow {
+            animation: pulse 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .grid-ecg {
+            background-size: 20px 20px;
+            background-image: 
+                linear-gradient(to right, rgba(6, 182, 212, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(6, 182, 212, 0.05) 1px, transparent 1px);
+        }
+    </style>
+</head>
+<body class="bg-icu-bg text-slate-100 font-sans min-h-screen flex flex-col antialiased selection:bg-rose-500 selection:text-white">
+
+    <!-- Top Emergency Header Bar -->
+    <header class="border-b border-icu-border bg-slate-950/80 backdrop-blur sticky top-0 z-50 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+        <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-lg bg-rose-600/20 border border-rose-500/50 flex items-center justify-center text-rose-500 shadow-inner">
+                <i class="fa-solid fa-heart-pulse text-lg"></i>
+            </div>
+            <div>
+                <div class="flex items-center space-x-2">
+                    <span class="font-telemetry text-lg tracking-wider font-bold text-slate-100">AORTA-GUARD</span>
+                    <span class="text-xs px-2 py-0.5 rounded-full font-mono bg-rose-500/20 text-rose-400 border border-rose-500/30">TRAUMA RESUS AI</span>
+                    <span class="text-[11px] text-slate-400 hidden sm:inline">• Zone 1 / Zone 3 Occlusion DSS</span>
+                </div>
+                <p class="text-[11px] text-slate-400 font-mono">REBOA Resuscitative Endovascular Balloon Occlusion Protocol & Hemodynamic Engine</p>
+            </div>
+        </div>
+
+        <!-- Telemetry Controls & Audio Alarm Status -->
+        <div class="flex items-center gap-3">
+            <button id="resetAppBtn" class="flex items-center space-x-2 text-xs font-mono px-3 py-1.5 rounded-md border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 transition">
+                <i class="fa-solid fa-rotate-left text-cyan-400"></i>
+                <span>RESET</span>
+            </button>
+            <!-- Audio Alarm Mute Toggle -->
+            <button id="audioMuteBtn" class="flex items-center space-x-2 text-xs font-mono px-3 py-1.5 rounded-md border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 transition">
+                <i id="audioIcon" class="fa-solid fa-volume-high text-emerald-400"></i>
+                <span id="audioStatusText">ALARM ACTIVE</span>
+            </button>
+            <!-- Share / Live Hosting Guide Modal Trigger -->
+            <!-- Guide Reference Drawer Open -->
+            <button id="openRefBtn" class="flex items-center space-x-1.5 text-xs font-semibold px-3 py-1.5 rounded-md bg-cyan-950/60 text-cyan-300 border border-cyan-800/60 hover:bg-cyan-900/40 transition">
+                <i class="fa-solid fa-book-medical"></i>
+                <span>Clinical Dossier</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace Grid -->
+    <main class="flex-1 p-3 md:p-5 max-w-[1700px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-4">
+        
+        <!-- LEFT COLUMN: Patient Intake, FAST Exam & AI Triage Engine (4 Cols) -->
+        <section class="lg:col-span-4 flex flex-col gap-4">
+            
+            <!-- Quick Scenario Presets -->
+            <div class="bg-icu-panel border border-icu-border rounded-xl p-3 shadow-sm flex items-center justify-between gap-2">
+                <span class="text-xs font-mono text-slate-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-bolt text-amber-400"></i> Cases:
+                </span>
+                <div class="flex gap-1.5 flex-wrap">
+                    <button id="presetCase1" class="text-[11px] font-mono px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-rose-300 transition">
+                        NCTH (Zone 1)
+                    </button>
+                    <button id="presetCase2" class="text-[11px] font-mono px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 transition">
+                        Pelvic Crush (Zone 3)
+                    </button>
+                    <button id="presetCase3" class="text-[11px] font-mono px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-red-400 transition">
+                        Tamponade (Contra)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Patient Intake Card -->
+            <div class="bg-icu-panel border border-icu-border rounded-xl p-4 shadow-md flex flex-col gap-4">
+                <div class="flex items-center justify-between border-b border-icu-border pb-2.5">
+                    <h2 class="font-telemetry font-bold text-sm tracking-wide text-cyan-400 flex items-center gap-2">
+                        <i class="fa-solid fa-bed-pulse"></i>
+                        <span>EMERGENCY INTAKE & FAST EXAM</span>
+                    </h2>
+                    <!-- Dynamic Shock Index Badge -->
+                    <div id="shockIndexBadge" class="text-[11px] font-mono px-2.5 py-0.5 rounded font-bold bg-rose-950 text-rose-300 border border-rose-800">
+                        SI: 2.51 (CRITICAL)
+                    </div>
+                </div>
+
+                <!-- Hemodynamic Sliders -->
+                <div class="space-y-3.5">
+                    <!-- SBP -->
+                    <div>
+                        <div class="flex justify-between items-baseline mb-1">
+                            <label class="text-xs font-medium text-slate-300">Systolic Blood Pressure (SBP)</label>
+                            <span id="sbpDisplay" class="font-telemetry text-base font-bold text-rose-400">120 <span class="text-xs text-slate-400">mmHg</span></span>
+                        </div>
+                        <input id="sbpSlider" type="range" min="0" max="150" value="120" step="1" 
+                            class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500">
+                        <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
+                            <span>0 (Arrest)</span>
+                            <span class="text-rose-400 font-bold">&lt;70 Severe Shock</span>
+                            <span>90 Cutoff</span>
+                            <span>150</span>
+                        </div>
+                    </div>
+
+                    <!-- Heart Rate -->
+                    <div>
+                        <div class="flex justify-between items-baseline mb-1">
+                            <label class="text-xs font-medium text-slate-300">Heart Rate (HR)</label>
+                            <span id="hrDisplay" class="font-telemetry text-base font-bold text-amber-400">85 <span class="text-xs text-slate-400">bpm</span></span>
+                        </div>
+                        <input id="hrSlider" type="range" min="0" max="190" value="85" step="1" 
+                            class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500">
+                    </div>
+                </div>
+
+                <!-- FAST Exam & Trauma Findings Checklist -->
+                <div class="space-y-2 border-t border-icu-border/70 pt-3">
+                    <span class="text-xs font-semibold text-slate-300 block mb-1">Injury Presentation & FAST Scan:</span>
+                    
+                    <!-- FAST Abdomen -->
+                    <label class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer transition">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid fa-water text-rose-400 text-xs"></i>
+                            <span class="text-xs text-slate-200">FAST (+) Intraperitoneal Free Fluid</span>
+                        </div>
+                        <input id="fastAbdomenCheck" type="checkbox" checked class="w-4 h-4 rounded text-rose-600 focus:ring-0 bg-slate-800 border-slate-700">
+                    </label>
+
+                    <!-- FAST Pelvis -->
+                    <label class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer transition">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid fa-bone text-amber-400 text-xs"></i>
+                            <span class="text-xs text-slate-200">Severe Unstable Pelvic Bleed / Groin Junctional</span>
+                        </div>
+                        <input id="fastPelvisCheck" type="checkbox" checked class="w-4 h-4 rounded text-amber-600 focus:ring-0 bg-slate-800 border-slate-700">
+                    </label>
+
+                    <!-- Cardiac Arrest / PEA -->
+                    <label class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer transition">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid fa-heart-crack text-red-500 text-xs"></i>
+                            <span class="text-xs text-slate-200">PEA / Exsanguinating Arrest Witnessed</span>
+                        </div>
+                        <input id="peaArrestCheck" type="checkbox" class="w-4 h-4 rounded text-red-600 focus:ring-0 bg-slate-800 border-slate-700">
+                    </label>
+
+                    <!-- Absolute Contraindications Checkboxes -->
+                    <div class="pt-2 border-t border-red-950/40">
+                        <span class="text-[11px] font-semibold text-red-400 uppercase tracking-wider block mb-1">Rule-Out Contraindications:</span>
+                        
+                        <label class="flex items-center justify-between p-1.5 rounded bg-red-950/20 border border-red-900/40 cursor-pointer mb-1.5">
+                            <span class="text-xs text-red-200">Thoracic Aortic Rupture / Mediastinal Hematoma</span>
+                            <input id="contraThoracicCheck" type="checkbox" class="w-4 h-4 rounded text-red-600 focus:ring-0 bg-slate-800 border-red-700">
+                        </label>
+
+                        <label class="flex items-center justify-between p-1.5 rounded bg-red-950/20 border border-red-900/40 cursor-pointer mb-1.5">
+                            <span class="text-xs text-red-200">Pericardial Tamponade (Beck's Triad)</span>
+                            <input id="contraTamponadeCheck" type="checkbox" class="w-4 h-4 rounded text-red-600 focus:ring-0 bg-slate-800 border-red-700">
+                        </label>
+
+                        <label class="flex items-center justify-between p-1.5 rounded bg-red-950/20 border border-red-900/40 cursor-pointer mb-1.5">
+                            <span class="text-xs text-red-200">Isolated Traumatic Brain Injury</span>
+                            <input id="contraTbiCheck" type="checkbox" class="w-4 h-4 rounded text-red-600 focus:ring-0 bg-slate-800 border-red-700">
+                        </label>
+
+                        <label class="flex items-center justify-between p-1.5 rounded bg-red-950/20 border border-red-900/40 cursor-pointer">
+                            <span class="text-xs text-red-200">Penetrating Neck or Chest Trauma</span>
+                            <input id="contraPenetratingCheck" type="checkbox" class="w-4 h-4 rounded text-red-600 focus:ring-0 bg-slate-800 border-red-700">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Clinical Triage Advisory Verdict -->
+            <div id="aiVerdictCard" class="bg-icu-panel border-2 border-emerald-500/50 rounded-xl p-4 shadow-lg flex flex-col gap-3 relative overflow-hidden">
+                <div class="absolute -right-6 -bottom-6 text-slate-800/20 text-8xl font-black pointer-events-none select-none">
+                    AI
+                </div>
+
+                <div class="flex items-center justify-between border-b border-icu-border pb-2">
+                    <div class="flex items-center space-x-2">
+                        <span class="relative flex h-3 w-3">
+                            <span id="verdictPing" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span id="verdictDot" class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                        </span>
+                        <h3 class="font-telemetry font-bold text-sm tracking-wide text-slate-100"> CLINICAL VERDICT</h3>
+                    </div>
+                    <span id="verdictBadge" class="text-xs font-mono font-bold px-2.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40">
+                        INDICATED
+                    </span>
+                </div>
+
+                <div>
+                    <h4 id="verdictTargetZone" class="text-xl font-telemetry font-bold text-emerald-400">ZONE 1 OCCLUSION</h4>
+                    <p id="verdictRationale" class="text-xs text-slate-300 mt-1 leading-relaxed">
+                        Refractory hemorrhagic shock with intraperitoneal injury. Complete aortic occlusion in Zone 1 preserves cerebral/myocardial perfusion while suppressing infradiaphragmatic exsanguination.
+                    </p>
+                </div>
+
+                <!-- Anatomic Catheter Insertion Metrics -->
+                <div id="catheterSpecsBox" class="bg-slate-900/80 rounded-lg p-2.5 border border-icu-border text-xs font-mono space-y-1.5">
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">Recommended Depth:</span>
+                        <span id="targetDepth" class="text-cyan-300 font-bold">~40-45 cm (Mid-Sternum)</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">Access Port:</span>
+                        <span id="targetAccessPort" class="text-slate-200">Common Femoral Artery (7Fr Sheath)</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">Max Full Ischemia:</span>
+                        <span id="targetIschemiaLimit" class="text-rose-400 font-bold">15 min target</span>
+                    </div>
+                </div>
+
+                <!-- Deploy Button from Decision Engine -->
+                <button id="applyRecommendationBtn" class="w-full mt-1 py-2.5 px-4 rounded-lg bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-telemetry tracking-wider font-bold shadow-md transition flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-syringe"></i>
+                    <span id="applyBtnLabel">PLACE BALLOON IN ZONE 1</span>
+                </button>
+                <p class="text-[10px] text-slate-400 text-center">Placement only. Select pREBOA or full REBOA after choosing the zone.</p>
+            </div>
+            
+        </section>
+
+        <!-- CENTER COLUMN: Interactive Anatomical Vessel Visualizer (4 Cols) -->
+        <section class="lg:col-span-4 flex flex-col gap-4">
+            <div class="bg-icu-panel border border-icu-border rounded-xl p-4 shadow-md flex-1 flex flex-col">
+                <div class="flex items-center justify-between border-b border-icu-border pb-2 mb-2">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-diagram-project text-cyan-400 text-sm"></i>
+                        <span class="font-telemetry font-bold text-sm tracking-wide text-slate-200">AORTIC ANATOMY & CATHETER</span>
+                    </div>
+                    <div class="flex items-center space-x-1 text-[11px] font-mono">
+                        <span class="px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">Zone 1</span>
+                        <span class="px-1.5 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 line-through" title="Paravisceral No-Go Zone">Z2</span>
+                        <span class="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">Zone 3</span>
+                    </div>
+                </div>
+
+                <!-- Interactive Anatomical SVG Container -->
+                <div class="flex-1 min-h-0 bg-slate-950/70 rounded-lg border border-slate-900 flex flex-col items-center p-2 gap-2">
+                    <svg id="aortaSvg" viewBox="0 0 320 620" class="w-full max-w-[320px] h-[min(68vh,620px)] min-h-[390px] max-h-[620px] select-none">
+                        <defs>
+                            <!-- Linear Gradients for Oxygenated Blood & Ischemic Blood -->
+                            <linearGradient id="oxygenatedBlood" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stop-color="#ef4444" />
+                                <stop offset="100%" stop-color="#b91c1c" />
+                            </linearGradient>
+                            <linearGradient id="ischemicBlood" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stop-color="#3b82f6" />
+                                <stop offset="100%" stop-color="#1e3a8a" />
+                            </linearGradient>
+                            <!-- Balloon Shader -->
+                            <radialGradient id="balloonShader" cx="40%" cy="40%" r="60%">
+                                <stop offset="0%" stop-color="#fef08a" />
+                                <stop offset="40%" stop-color="#eab308" />
+                                <stop offset="100%" stop-color="#854d0e" />
+                            </radialGradient>
+                            <!-- Glow Filter -->
+                            <filter id="balloonGlow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="3" result="blur" />
+                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                            </filter>
+                        </defs>
+
+                        <!-- Anatomical Zone Boundary Overlay Boxes -->
+                        <!-- Zone 1: Subclavian to Celiac -->
+                        <rect x="25" y="105" width="270" height="115" rx="6" fill="#0284c7" fill-opacity="0.08" stroke="#0284c7" stroke-dasharray="3 3" stroke-width="1.2" />
+                        <text x="35" y="125" fill="#38bdf8" font-size="11" font-family="'Chakra Petch', sans-serif" font-weight="700">ZONE 1 (Thoracic Aorta)</text>
+                        <text x="35" y="140" fill="#94a3b8" font-size="9" font-family="monospace"></text>
+
+                        <!-- Zone 2: Paravisceral NO-GO -->
+                        <rect x="25" y="225" width="270" height="90" rx="6" fill="#ef4444" fill-opacity="0.05" stroke="#ef4444" stroke-dasharray="2 2" stroke-width="1" />
+                        <text x="35" y="245" fill="#f87171" font-size="10" font-family="'Chakra Petch', sans-serif" font-weight="700">ZONE 2 (NO-GO ZONE)</text>
+                        <text x="35" y="260" fill="#fda4af" font-size="8.5" font-family="monospace"></text>
+
+                        <!-- Zone 3: Infrarenal Aorta -->
+                        <rect x="25" y="320" width="270" height="110" rx="6" fill="#f59e0b" fill-opacity="0.08" stroke="#f59e0b" stroke-dasharray="3 3" stroke-width="1.2" />
+                        <text x="35" y="340" fill="#fbbf24" font-size="11" font-family="'Chakra Petch', sans-serif" font-weight="700">ZONE 3 (Infrarenal Aorta)</text>
+                        <text x="35" y="355" fill="#cbd5e1" font-size="9" font-family="monospace"></text>
+
+                        <!-- Aortic Arch & Major Neck Vessels -->
+                        <!-- Innominate, Carotid, Left Subclavian -->
+                        <path d="M 125,50 L 125,18" stroke="#ef4444" stroke-width="8" stroke-linecap="round" fill="none" />
+                        <text x="95" y="14" fill="#94a3b8" font-size="8" font-family="monospace">Brachiocephalic</text>
+                        
+                        <path d="M 145,45 L 145,18" stroke="#ef4444" stroke-width="6" stroke-linecap="round" fill="none" />
+                        <path d="M 165,52 L 165,18" stroke="#ef4444" stroke-width="7" stroke-linecap="round" fill="none" />
+                        <text x="170" y="14" fill="#94a3b8" font-size="8" font-family="monospace">Lt Subclavian</text>
+
+                        <!-- Main Aortic Trunk Path -->
+                        <!-- Aorta Contour (Ascending -> Arch -> Descending -> Infrarenal -> Bifurcation) -->
+                        <path id="aortaBase" d="
+                            M 100,85 
+                            C 100,35 180,35 180,85 
+                            L 180,225
+                            L 180,320
+                            L 180,430
+                            L 135,530
+                            M 180,430
+                            L 225,530
+                        " fill="none" stroke="#dc2626" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" />
+
+                        <!-- Blood Flow Channel (Inner Lumen) -->
+                        <path id="aortaLumen" d="
+                            M 100,85 
+                            C 100,43 180,43 180,85 
+                            L 180,430
+                        " fill="none" stroke="#b91c1c" stroke-width="18" stroke-linecap="round" />
+
+                        <!-- Visceral & Renal Arteries (Zone 2) -->
+                        <!-- Celiac Trunk -->
+                        <path d="M 180,235 L 215,225" stroke="#ef4444" stroke-width="7" stroke-linecap="round" />
+                        <text x="220" y="228" fill="#cbd5e1" font-size="8" font-family="monospace">Celiac</text>
+                        <!-- SMA -->
+                        <path d="M 180,255 L 218,252" stroke="#ef4444" stroke-width="6.5" stroke-linecap="round" />
+                        <text x="222" y="255" fill="#cbd5e1" font-size="8" font-family="monospace">SMA</text>
+                        <!-- Renal Arteries (Bilateral) -->
+                        <path d="M 170,290 L 130,295" stroke="#ef4444" stroke-width="7.5" stroke-linecap="round" />
+                        <text x="90" y="298" fill="#cbd5e1" font-size="8" font-family="monospace">Lt Renal</text>
+                        <path d="M 180,295 L 225,300" stroke="#ef4444" stroke-width="7.5" stroke-linecap="round" />
+                        <text x="230" y="303" fill="#cbd5e1" font-size="8" font-family="monospace">Rt Renal</text>
+
+                        <!-- Common Iliac Arteries & Femoral Extension -->
+                        <path d="M 180,430 L 130,530 L 115,595" fill="none" stroke="#ef4444" stroke-width="13" stroke-linecap="round" />
+                        <path d="M 180,430 L 230,530 L 245,595" fill="none" stroke="#ef4444" stroke-width="13" stroke-linecap="round" />
+                        <text x="245" y="580" fill="#94a3b8" font-size="8" font-family="monospace">Rt CFA Access</text>
+
+                        <!-- Ischemic Lower Segment Tint Overlay (Dynamic when occluded) -->
+                        <path id="ischemicOverlay" d="
+                            M 180,185 
+                            L 180,430
+                            L 130,530 L 115,595
+                            M 180,430
+                            L 230,530 L 245,595
+                        " fill="none" stroke="#1e3a8a" stroke-width="12" stroke-linecap="round" opacity="0" class="transition-opacity duration-700" />
+
+                        <!-- Endovascular Guide Wire & Sheath -->
+                        <path id="catheterWire" d="M 245,595 L 230,530 L 180,430 L 180,165" fill="none" stroke="#94a3b8" stroke-width="3" stroke-dasharray="4 2" />
+                        <!-- Femoral Introducer Sheath Marker -->
+                        <rect x="238" y="575" width="14" height="18" rx="2" fill="#0284c7" />
+                        
+                        <!-- REBOA BALLOONS (Zone 1 and Zone 3 instances) -->
+                        <!-- Zone 1 Balloon -->
+                        <g id="zone1BalloonGroup" transform="translate(180, 165)" class="cursor-pointer">
+                            <ellipse id="zone1Balloon" rx="5" ry="10" fill="url(#balloonShader)" stroke="#fef08a" stroke-width="1.5" opacity="0.2" class="transition-all duration-500" />
+                            <circle cx="0" cy="0" r="2" fill="#ffffff" />
+                        </g>
+
+                        <!-- Zone 3 Balloon -->
+                        <g id="zone3BalloonGroup" transform="translate(180, 375)" class="cursor-pointer">
+                            <ellipse id="zone3Balloon" rx="5" ry="10" fill="url(#balloonShader)" stroke="#fef08a" stroke-width="1.5" opacity="0.2" class="transition-all duration-500" />
+                            <circle cx="0" cy="0" r="2" fill="#ffffff" />
+                        </g>
+
+                        <!-- Pressure Transducer Marker -->
+                        <g id="sensorProbe" transform="translate(180, 130)">
+                            <polygon points="0,-6 6,0 0,6 -6,0" fill="#38bdf8" />
+                            <text x="12" y="3" fill="#38bdf8" font-size="8" font-family="monospace">Prox A-Line</text>
+                        </g>
+                    </svg>
+
+                    <!-- Overlay Legend and Status Indicator -->
+                    <div class="w-full grid grid-cols-1 sm:grid-cols-3 gap-1.5 bg-slate-900/90 border border-slate-800 rounded p-1.5 text-[10px] font-mono">
+                        <div class="flex items-center space-x-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                            <span class="text-slate-300">Normoperfusion / High MAP</span>
+                        </div>
+                        <div class="flex items-center space-x-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full bg-blue-700"></span>
+                            <span class="text-slate-300">Distal Low Flow / Ischemia</span>
+                        </div>
+                        <div class="flex items-center space-x-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full bg-yellow-400"></span>
+                            <span class="text-slate-300">Compliant Occlusion Balloon</span>
+                        </div>
+                    </div>
+
+                    <!-- Direct Zone Select Buttons on Canvas -->
+                    <div class="w-full grid grid-cols-2 gap-2">
+                        <button id="selectZone1Btn" class="flex-1 py-1.5 px-2 bg-blue-950/80 hover:bg-blue-900 text-blue-200 border border-blue-700/60 rounded text-xs font-telemetry font-bold transition flex items-center justify-center space-x-1">
+                            <i class="fa-solid fa-crosshairs"></i>
+                            <span>Target Zone 1</span>
+                        </button>
+                        <button id="selectZone3Btn" class="flex-1 py-1.5 px-2 bg-amber-950/80 hover:bg-amber-900 text-amber-200 border border-amber-700/60 rounded text-xs font-telemetry font-bold transition flex items-center justify-center space-x-1">
+                            <i class="fa-solid fa-crosshairs"></i>
+                            <span>Target Zone 3</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- RIGHT COLUMN: Realtime Waveforms, Occlusion Controls & Dwell Timer (4 Cols) -->
+        <section class="lg:col-span-4 flex flex-col gap-4">
+
+            <!-- Arterial Hemodynamic Oscilloscope Canvas -->
+            <div class="bg-icu-panel border border-icu-border rounded-xl p-4 shadow-md flex flex-col gap-2">
+                <div class="flex items-center justify-between border-b border-icu-border pb-2">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                        <h3 class="font-telemetry font-bold text-sm tracking-wide text-slate-100">DUAL ARTERIAL WAVEFORMS</h3>
+                    </div>
+                    <span class="text-[10px] font-mono text-cyan-400 px-2 py-0.5 rounded bg-cyan-950 border border-cyan-900">25 mm/s • Sweep</span>
+                </div>
+
+                <!-- Canvas Component with Grid -->
+                <div class="relative bg-slate-950 rounded-lg border border-slate-900 grid-ecg overflow-hidden h-[220px]">
+                    <canvas id="waveformCanvas" class="w-full h-full block"></canvas>
+                    
+                    <!-- Live Numerical Pressure Overlays -->
+                    <div class="absolute z-10 top-2 left-3 pointer-events-none font-telemetry bg-slate-950/95 rounded px-2 py-1">
+                        <div class="text-[11px] font-bold text-cyan-400 flex items-center space-x-1">
+                            <span class="inline-block w-2 h-0.5 bg-cyan-400"></span>
+                            <span>PROXIMAL A-LINE (Aorta/Radial)</span>
+                        </div>
+                        <div class="text-xl font-bold text-cyan-300 font-mono tracking-tight" id="proximalBpReadout">
+                            55 / 38 <span class="text-xs text-cyan-500 font-normal">MAP: 44</span>
+                        </div>
+                    </div>
+
+                    <div class="absolute z-10 bottom-2 left-3 pointer-events-none font-telemetry bg-slate-950/95 rounded px-2 py-1">
+                        <div class="text-[11px] font-bold text-rose-400 flex items-center space-x-1">
+                            <span class="inline-block w-2 h-0.5 bg-rose-400"></span>
+                            <span>DISTAL PERFUSION (Femoral/Dorsalis)</span>
+                        </div>
+                        <div class="text-lg font-bold text-rose-300 font-mono tracking-tight" id="distalBpReadout">
+                            52 / 36 <span class="text-xs text-rose-500 font-normal">MAP: 41</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Balloon Inflation & pREBOA Titration Controls -->
+            <div class="bg-icu-panel border border-icu-border rounded-xl p-4 shadow-md flex flex-col gap-3">
+                <div class="flex items-center justify-between border-b border-icu-border pb-2">
+                    <h3 class="font-telemetry font-bold text-sm tracking-wide text-slate-100 flex items-center gap-2">
+                        <i class="fa-solid fa-circle-dot text-yellow-400"></i>
+                        <span>BALLOON INFLATION & pREBOA TITRATOR</span>
+                    </h3>
+                    <span id="balloonStateBadge" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                        DEFLATED
+                    </span>
+                </div>
+
+                <!-- Inflation Slider (0% to 100%) -->
+                <div class="space-y-2">
+                    <div class="flex justify-between items-baseline">
+                        <span class="text-xs font-medium text-slate-300">Occlusion Volume / Diameter</span>
+                        <span id="inflationPctDisplay" class="font-telemetry text-base font-bold text-yellow-400">0% <span class="text-xs text-slate-400">(0.0 mL Saline)</span></span>
+                    </div>
+                    <input id="inflationSlider" type="range" min="0" max="100" value="0" step="1"
+                        class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-yellow-400">
+                    <div class="grid grid-cols-11 text-[9px] text-slate-500 font-mono text-center" aria-label="Occlusion percentage scale in 10 percent increments">
+                        <span class="flex flex-col items-center"><i class="h-1.5 w-px bg-slate-500"></i>0</span><span class="flex flex-col items-center"><i class="h-1.5 w-px bg-slate-500"></i>10</span><span class="flex flex-col items-center"><i class="h-1.5 w-px bg-slate-500"></i>20</span><span class="flex flex-col items-center"><i class="h-1.5 w-px bg-slate-500"></i>30</span><span class="flex flex-col items-center"><i class="h-1.5 w-px bg-slate-500"></i>40</span><span class="flex flex-col items-center"><i class="h-1.5 w-px bg-slate-500"></i>50</span><span class="flex flex-col items-center"><i class="h-1.5 w-px bg-slate-500"></i>60</span><span class="flex flex-col items-center"><i class="h-1.5 w-px bg-slate-500"></i>70</span><span class="flex flex-col items-center"><i class="h-1.5 w-px bg-slate-500"></i>80</span><span class="flex flex-col items-center"><i class="h-1.5 w-px bg-slate-500"></i>90</span><span class="flex flex-col items-center"><i class="h-1.5 w-px bg-slate-500"></i>100</span>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>0% (Deflated)</span>
+                        <span class="text-cyan-400 font-bold">40-70% (Partial pREBOA)</span>
+                        <span class="text-rose-400 font-bold">100% (Complete)</span>
+                    </div>
+                </div>
+
+                <!-- Fast Action Preset Buttons -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                    <button id="presetDeflateBtn" class="py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded border border-slate-700 text-xs font-semibold transition">
+                        Deflate Gradually (0%)
+                    </button>
+                    <button id="presetInstantDeflateBtn" class="py-1.5 px-2 bg-rose-950/80 hover:bg-rose-900 text-rose-200 rounded border border-rose-800 text-xs font-semibold transition">
+                        Deflate Now (0%)
+                    </button>
+                    <button id="presetPreboaBtn" class="py-1.5 px-2 bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 rounded border border-cyan-800 text-xs font-semibold transition">
+                        pREBOA (60%)
+                    </button>
+                    <button id="presetCompleteBtn" class="py-1.5 px-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 rounded border border-rose-800 text-xs font-semibold transition">
+                        REBOA (Full 100%)
+                    </button>
+                </div>
+
+                <div class="text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded border border-slate-800/80 leading-relaxed font-mono">
+                    <i class="fa-solid fa-circle-info text-cyan-400 mr-1"></i>
+                    Simulation rate: remove no more than 1 mL per step, at one step per simulated minute. Use the ischemic timer speed control to adjust the pace. Clinical deflation may take 15 minutes or longer; this simulator does not prescribe clinical timing.
+                </div>
+                <div id="deflationStatus" class="text-[10px] text-cyan-300 font-mono" aria-live="polite">Gradual deflation is idle.</div>
+            </div>
+
+            <!-- Dwell Time & Ischemic Burden Monitor -->
+            <div id="dwellContainer" class="bg-icu-panel border border-icu-border rounded-xl p-4 shadow-md flex flex-col gap-3">
+                <div class="flex items-center justify-between border-b border-icu-border pb-2">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-stopwatch-20 text-rose-400"></i>
+                        <h3 class="font-telemetry font-bold text-sm tracking-wide text-slate-100">ISCHEMIC DWELL TIMER</h3>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button id="dwellTimeSpeedBtn" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-cyan-300 hover:bg-slate-700 border border-slate-700">
+                            Speed: 1x
+                        </button>
+                        <button id="dwellResetBtn" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white border border-slate-700">
+                            Reset
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Timer Numerical Display -->
+                <div class="flex items-center justify-between bg-slate-950 p-3 rounded-lg border border-slate-900">
+                    <div>
+                        <div class="text-[10px] text-slate-400 font-mono uppercase">Occlusion Duration</div>
+                        <div id="dwellTimerText" class="font-telemetry text-3xl font-bold tracking-wider text-slate-200">00:00</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-[10px] text-slate-400 font-mono uppercase">Safe Limit</div>
+                        <div id="dwellLimitText" class="font-telemetry text-lg font-bold text-amber-400">15 min (Zone 1)</div>
+                    </div>
+                </div>
+
+                <!-- Ischemic Burden Progress Bar -->
+                <div>
+                    <div class="flex justify-between text-xs font-mono mb-1">
+                        <span class="text-slate-400">Metabolic & Reperfusion Risk:</span>
+                        <span id="dwellRiskLabel" class="text-emerald-400 font-bold">LOW (0%)</span>
+                    </div>
+                <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden p-0.5 border border-slate-700">
+                        <div id="dwellProgressBar" class="h-full bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-600 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                <p class="text-[10px] text-slate-500 leading-relaxed">Complete-occlusion limits: Zone 1 15 min; Zone 3 30 min educational targets. pREBOA uses a 2-hour guidance limit only under device-specific protocols and active physiologic monitoring; it is not a universal safety guarantee.</p>
+                </div>
+
+                <!-- Dynamic Warning Alert Banner -->
+                <div id="dwellAlertBanner" class="hidden p-2 rounded-lg bg-rose-950/70 border border-rose-500 text-rose-200 text-xs flex items-center space-x-2">
+                    <i class="fa-solid fa-triangle-exclamation text-rose-400 text-base animate-bounce"></i>
+                    <span id="dwellAlertMsg" class="font-semibold">ISCHEMIA THRESHOLD EXCEEDED! Immediate deflation/pREBOA recommended to avert severe lactate washout.</span>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- LIVE HOSTING & URL MODAL -->
+    <div id="hostModalBackdrop" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden transition-opacity flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-icu-border rounded-2xl max-w-xl w-full p-6 shadow-2xl relative">
+            <button id="closeHostModalBtn" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+
+            <div class="flex items-center space-x-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center text-emerald-400">
+                    <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="font-telemetry text-lg font-bold text-slate-100">Deploy & Get a Public Live URL</h3>
+                    <p class="text-xs text-slate-400 font-mono">Run this standalone simulator online in under 60 seconds</p>
+                </div>
+            </div>
+
+            <div class="space-y-4 text-xs text-slate-300 leading-relaxed font-sans">
+                <p>Because this app is completely self-contained in a single file (<code class="text-cyan-300 bg-slate-950 px-1 py-0.5 rounded">index.html</code>), you can publish it immediately for free using any of these 1-click hosts:</p>
+
+                <div class="space-y-2.5">
+                    <!-- Option 1: Netlify Drop -->
+                    <div class="p-3 bg-slate-950 rounded-xl border border-slate-800 hover:border-slate-700 transition">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="font-bold text-cyan-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-bolt"></i> Option 1: Netlify Drop (Instant, No Signup Needed)
+                            </span>
+                            <span class="text-[10px] bg-cyan-950 text-cyan-300 px-2 py-0.5 rounded border border-cyan-800">Fastest</span>
+                        </div>
+                        <ol class="list-decimal pl-4 space-y-1 text-slate-400">
+                            <li>Download the code file as <code class="text-slate-200">index.html</code> using the button below.</li>
+                            <li>Go to <a href="https://app.netlify.com/drop" target="_blank" class="text-emerald-400 underline font-semibold">app.netlify.com/drop</a> in your browser.</li>
+                            <li>Drag & drop the downloaded file/folder. Netlify generates a public <code class="text-slate-200">https://your-site.netlify.app</code> URL instantly.</li>
+                        </ol>
+                    </div>
+
+                    <!-- Option 2: GitHub Pages -->
+                    <div class="p-3 bg-slate-950 rounded-xl border border-slate-800 hover:border-slate-700 transition">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="font-bold text-emerald-400 flex items-center gap-1.5">
+                                <i class="fa-brands fa-github"></i> Option 2: GitHub Pages
+                            </span>
+                            <span class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">Permanent</span>
+                        </div>
+                        <p class="text-slate-400">Push this <code class="text-slate-200">index.html</code> to a repository, go to <strong>Settings &rarr; Pages &rarr; Source: main branch</strong>. Your permanent link will be ready at <code class="text-emerald-300">https://&lt;username&gt;.github.io/&lt;repo&gt;</code>.</p>
+                    </div>
+                </div>
+
+                <div class="pt-2 flex items-center justify-between border-t border-slate-800">
+                    <button id="downloadHtmlBtn" class="py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-telemetry font-bold text-xs shadow-md transition flex items-center space-x-2">
+                        <i class="fa-solid fa-file-arrow-down"></i>
+                        <span>Download index.html File</span>
+                    </button>
+                    <span class="text-[11px] text-slate-500 font-mono">100% Client-Side • No backend required</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SLIDE-OVER CLINICAL DOSSIER DRAWER (Reference & CBME Guidelines) -->
+    <div id="refDrawerBackdrop" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden transition-opacity"></div>
+    <div id="refDrawer" class="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-slate-900 border-l border-icu-border z-50 transform translate-x-full transition-transform duration-300 flex flex-col shadow-2xl overflow-y-auto">
+        
+        <div class="p-4 border-b border-icu-border flex items-center justify-between sticky top-0 bg-slate-900/95 backdrop-blur z-10">
+            <div class="flex items-center space-x-2">
+                <i class="fa-solid fa-book-medical text-cyan-400 text-lg"></i>
+                <h3 class="font-telemetry font-bold text-base text-slate-100">REBOA CLINICAL DOSSIER & CBME GUIDELINES</h3>
+            </div>
+            <button id="closeRefBtn" class="w-8 h-8 rounded-lg bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="p-5 space-y-6 text-sm text-slate-300 leading-relaxed font-sans">
+            
+            <!-- Aortic Anatomy Zones Card -->
+            <section class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 class="font-telemetry font-bold text-cyan-400 text-sm tracking-wide flex items-center gap-2">
+                    <i class="fa-solid fa-layer-group"></i>
+                    <span>AORTIC OCCLUSION ZONES</span>
+                </h4>
+                <div class="space-y-2.5 text-xs font-mono">
+                    <div class="p-2.5 rounded bg-blue-950/40 border border-blue-900">
+                        <strong class="text-blue-300 block mb-0.5 text-sm">Zone 1 (Thoracic Aorta)</strong>
+                        <span><br>
+                        Depth Estimate: ~40-45 cm (External landmark: Mid-sternum / sternomanubrial notch).<br>
+                        Indications: Non-compressible abdominal exsanguination, ruptured AAA, PEA trauma arrest.<br>
+                        Target: Begin definitive hemorrhage control within 15 minutes when Zone 1 occlusion is used; total occlusion should be minimized, with increased ischemic risk reported beyond 30 minutes.</span>
+                    </div>
+
+                    <div class="p-2.5 rounded bg-red-950/40 border border-red-900">
+                        <strong class="text-red-300 block mb-0.5 text-sm">Zone 2 (Visceral & Renal Paravisceral) - NO-GO</strong>
+                        <span>Boundaries: Celiac axis to lowest renal artery.<br>
+                        Rule: <span class="text-red-400 font-bold">NEVER INFLATE IN ZONE 2</span>. Balloon expansion can shear visceral trunk origins and causes dense renal and mesenteric infarction without proximal pressure gain advantage.</span>
+                    </div>
+
+                    <div class="p-2.5 rounded bg-amber-950/40 border border-amber-900">
+                        <strong class="text-amber-300 block mb-0.5 text-sm">Zone 3 (Infrarenal Aorta)</strong>
+                        <span>Boundaries: Lowest renal artery to aortic bifurcation.<br>
+                        Depth Estimate: ~20-25 cm (External landmark: Umbilicus).<br>
+                        Indications: Severe pelvic fracture hemorrhage, refractory junctional groin/femoral hemorrhage.<br>
+                        Target: Less than 30 minutes; maximum acceptable duration is unknown, and total occlusion should not exceed 60 minutes.</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Indications & Contraindications -->
+            <section class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 class="font-telemetry font-bold text-cyan-400 text-sm tracking-wide flex items-center gap-2">
+                    <i class="fa-solid fa-stethoscope"></i>
+                    <span>INDICATIONS & ABSOLUTE CONTRAINDICATIONS</span>
+                </h4>
+                <div class="text-xs space-y-2">
+                    <p><strong class="text-emerald-400">Primary Indications:</strong> Exsanguinating subdiaphragmatic hemorrhage (NCTH) with refractory hemorrhagic shock (SBP &lt; 70-80 mmHg unresponsive to initial resuscitation) or witnessed PEA arrest from exsanguination.</p>
+                    <div class="p-2 rounded bg-rose-950/30 border border-rose-900 text-rose-200">
+                        <strong class="text-rose-400 block mb-1">Absolute Contraindications:</strong>
+                        <ul class="list-disc pl-4 space-y-1">
+                            <li>Suspected Thoracic Aortic Disruption / Aortic Arch injury (Occlusion balloon will cause proximal hydraulic rupture).</li>
+                            <li>Pericardial Tamponade (Bypasses indicated ED Thoracotomy).</li>
+                            <li>Stable hemodynamic status (SBP &gt; 90 mmHg).</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Technical Pearls & Partial REBOA -->
+            <section class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 class="font-telemetry font-bold text-cyan-400 text-sm tracking-wide flex items-center gap-2">
+                    <i class="fa-solid fa-heart-pulse"></i>
+                    <span>PARTIAL REBOA (pREBOA) & REPERFUSION HYPOTENSION</span>
+                </h4>
+                <p class="text-xs text-slate-300">
+                    Balloon deflation can cause ischemia-reperfusion effects and hemodynamic instability. The response varies; titrate only with continuous clinical monitoring and definitive hemorrhage control underway, following the responsible team's protocol.
+                </p>
+                <div class="text-xs bg-slate-900 p-2.5 rounded border border-slate-800 space-y-1 font-mono">
+                    <div class="text-cyan-300 font-bold">pREBOA Titration Strategy:</div>
+                    <div>1. Deflate gradually; avoid removing more than 1 mL in a single step.</div>
+                    <div>2. Target a permissive distal pressure (MAP 40-50 mmHg).</div>
+                    <div>3. Administer calcium chloride / bicarbonate & pre-infuse blood products before deflation.</div>
+                </div>
+            </section>
+
+            <!-- Complications -->
+            <section class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2 text-xs">
+                <span class="font-bold text-amber-400 block font-telemetry text-sm">KNOWN COMPLICATIONS</span>
+                <ul class="list-disc pl-4 space-y-1 text-slate-400">
+                    <li>Iliac or Femoral artery dissection, thrombosis, and pseudoaneurysm.</li>
+                    <li>Lower limb acute compartment syndrome requiring emergency fasciotomy.</li>
+                    <li>Spinal cord ischemia and paraplegia (higher risk if Zone 1 occlusion &gt; 45 mins).</li>
+                    <li>Aortic wall rupture from balloon over-pressurization.</li>
+                </ul>
+            </section>
+
+        </div>
+    </div>
+
+    <!-- Application Engine Logic -->
+    <script>
+        // State Management Object
+        const AppState = {
+            patient: {
+                sbp: 120,
+                hr: 85,
+                fastAbdomen: true,
+                fastPelvis: true,
+                peaArrest: false,
+                contraThoracic: false,
+                contraTamponade: false,
+                contraTbi: false,
+                contraPenetrating: false
+            },
+            aiRecommendation: {
+                status: 'INDICATED', // INDICATED, CONTRAINDICATED, HOLD
+                targetZone: 1, // 1 or 3
+                rationale: '',
+                catheterDepthCm: 42,
+                maxMinutes: 15
+            },
+            balloon: {
+                deployedZone: null, // null, 1, or 3
+                inflationPercent: 0, // 0 to 100
+                pendingZone: null,
+                inflationAnimationFrame: null,
+                deflationTargetPercent: null,
+                deflationElapsedSeconds: 0,
+            },
+            dwellTimer: {
+                seconds: 0,
+                running: false,
+                speedMultiplier: 1,
+                intervalId: null,
+                thresholdAlarmed: false,
+                reperfusionAlert: false
+            },
+            audio: {
+                muted: false,
+                audioCtx: null
+            }
+        };
+
+        // DOM Elements
+        const sbpSlider = document.getElementById('sbpSlider');
+        const sbpDisplay = document.getElementById('sbpDisplay');
+        const hrSlider = document.getElementById('hrSlider');
+        const hrDisplay = document.getElementById('hrDisplay');
+        const fastAbdomenCheck = document.getElementById('fastAbdomenCheck');
+        const fastPelvisCheck = document.getElementById('fastPelvisCheck');
+        const peaArrestCheck = document.getElementById('peaArrestCheck');
+        const contraThoracicCheck = document.getElementById('contraThoracicCheck');
+        const contraTamponadeCheck = document.getElementById('contraTamponadeCheck');
+        const contraTbiCheck = document.getElementById('contraTbiCheck');
+        const contraPenetratingCheck = document.getElementById('contraPenetratingCheck');
+
+        // AI Verdict Elements
+        const aiVerdictCard = document.getElementById('aiVerdictCard');
+        const verdictBadge = document.getElementById('verdictBadge');
+        const verdictDot = document.getElementById('verdictDot');
+        const verdictPing = document.getElementById('verdictPing');
+        const verdictTargetZone = document.getElementById('verdictTargetZone');
+        const verdictRationale = document.getElementById('verdictRationale');
+        const targetDepth = document.getElementById('targetDepth');
+        const targetAccessPort = document.getElementById('targetAccessPort');
+        const targetIschemiaLimit = document.getElementById('targetIschemiaLimit');
+        const applyRecommendationBtn = document.getElementById('applyRecommendationBtn');
+        const applyBtnLabel = document.getElementById('applyBtnLabel');
+
+        // Balloon Inflation Elements
+        const inflationSlider = document.getElementById('inflationSlider');
+        const inflationPctDisplay = document.getElementById('inflationPctDisplay');
+        const balloonStateBadge = document.getElementById('balloonStateBadge');
+        const presetDeflateBtn = document.getElementById('presetDeflateBtn');
+        const presetInstantDeflateBtn = document.getElementById('presetInstantDeflateBtn');
+        const presetPreboaBtn = document.getElementById('presetPreboaBtn');
+        const presetCompleteBtn = document.getElementById('presetCompleteBtn');
+        const resetAppBtn = document.getElementById('resetAppBtn');
+
+        // SVG Anatomy Elements
+        const zone1Balloon = document.getElementById('zone1Balloon');
+        const zone3Balloon = document.getElementById('zone3Balloon');
+        const zone1BalloonGroup = document.getElementById('zone1BalloonGroup');
+        const zone3BalloonGroup = document.getElementById('zone3BalloonGroup');
+        const catheterWire = document.getElementById('catheterWire');
+        const ischemicOverlay = document.getElementById('ischemicOverlay');
+        const selectZone1Btn = document.getElementById('selectZone1Btn');
+        const selectZone3Btn = document.getElementById('selectZone3Btn');
+
+        // Waveform & Telemetry Elements
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        const proxBpReadout = document.getElementById('proximalBpReadout');
+        const distalBpReadout = document.getElementById('distalBpReadout');
+
+        // Dwell Timer Elements
+        const dwellTimerText = document.getElementById('dwellTimerText');
+        const dwellLimitText = document.getElementById('dwellLimitText');
+        const dwellRiskLabel = document.getElementById('dwellRiskLabel');
+        const dwellProgressBar = document.getElementById('dwellProgressBar');
+        const dwellAlertBanner = document.getElementById('dwellAlertBanner');
+        const dwellAlertMsg = document.getElementById('dwellAlertMsg');
+        const dwellTimeSpeedBtn = document.getElementById('dwellTimeSpeedBtn');
+        const dwellResetBtn = document.getElementById('dwellResetBtn');
+        const deflationStatus = document.getElementById('deflationStatus');
+
+        // Shock Index & Preset Elements
+        const shockIndexBadge = document.getElementById('shockIndexBadge');
+        const presetCase1 = document.getElementById('presetCase1');
+        const presetCase2 = document.getElementById('presetCase2');
+        const presetCase3 = document.getElementById('presetCase3');
+
+        // Deployment & URL Modal Elements
+        const openHostGuideBtn = document.getElementById('openHostGuideBtn');
+        const hostModalBackdrop = document.getElementById('hostModalBackdrop');
+        const closeHostModalBtn = document.getElementById('closeHostModalBtn');
+        const downloadHtmlBtn = document.getElementById('downloadHtmlBtn');
+
+        // Audio Elements
+        const audioMuteBtn = document.getElementById('audioMuteBtn');
+        const audioIcon = document.getElementById('audioIcon');
+        const audioStatusText = document.getElementById('audioStatusText');
+
+        // Reference Drawer
+        const openRefBtn = document.getElementById('openRefBtn');
+        const closeRefBtn = document.getElementById('closeRefBtn');
+        const refDrawer = document.getElementById('refDrawer');
+        const refDrawerBackdrop = document.getElementById('refDrawerBackdrop');
+
+        // Audio System Setup (Web Audio API Synthesizer)
+        function initAudio() {
+            if (!AppState.audio.audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    AppState.audio.audioCtx = new AudioContext();
+                }
+            }
+        }
+
+        function playBeep(freq = 880, duration = 0.12, type = 'sine') {
+            if (AppState.audio.muted || !AppState.audio.audioCtx) return;
+            try {
+                if (AppState.audio.audioCtx.state === 'suspended') {
+                    AppState.audio.audioCtx.resume();
+                }
+                const osc = AppState.audio.audioCtx.createOscillator();
+                const gain = AppState.audio.audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, AppState.audio.audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.08, AppState.audio.audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, AppState.audio.audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(AppState.audio.audioCtx.destination);
+                osc.start();
+                osc.stop(AppState.audio.audioCtx.currentTime + duration);
+            } catch (e) {
+                console.warn("Audio play prevented:", e);
+            }
+        }
+
+        // ==========================================
+        // 1. Clinical Decision Engine & Triage Logic
+        // ==========================================
+        function runClinicalInference() {
+            const p = AppState.patient;
+            const rec = AppState.aiRecommendation;
+
+            // Calculate Shock Index (HR / SBP)
+            const shockIndex = p.sbp > 0 ? (p.hr / p.sbp).toFixed(2) : 9.99;
+            if (shockIndexBadge) {
+                if (shockIndex > 1.4 || p.sbp < 60) {
+                    shockIndexBadge.textContent = `SI: ${shockIndex} (CRITICAL)`;
+                    shockIndexBadge.className = "text-[11px] font-mono px-2.5 py-0.5 rounded font-bold bg-rose-950 text-rose-300 border border-rose-800";
+                } else if (shockIndex >= 0.9) {
+                    shockIndexBadge.textContent = `SI: ${shockIndex} (SHOCK)`;
+                    shockIndexBadge.className = "text-[11px] font-mono px-2.5 py-0.5 rounded font-bold bg-amber-950 text-amber-300 border border-amber-800";
+                } else {
+                    shockIndexBadge.textContent = `SI: ${shockIndex} (NORMAL)`;
+                    shockIndexBadge.className = "text-[11px] font-mono px-2.5 py-0.5 rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-800";
+                }
+            }
+
+            // 1. Absolute Contraindications Override
+            if (p.contraThoracic || p.contraTamponade || p.contraTbi || p.contraPenetrating) {
+                rec.status = 'CONTRAINDICATED';
+                rec.targetZone = null;
+                const contraindicationReasons = [];
+                if (p.contraThoracic) contraindicationReasons.push('Thoracic aortic rupture / mediastinal hematoma: REBOA may raise proximal aortic pressure and worsen the rupture, potentially causing catastrophic bleeding.');
+                if (p.contraTamponade) contraindicationReasons.push('Pericardial tamponade (Beck’s triad): REBOA does not relieve obstructive shock; prioritizing aortic occlusion may delay tamponade treatment, and increased pressure may worsen pericardial extravasation.');
+                if (p.contraTbi) contraindicationReasons.push('Isolated traumatic brain injury: REBOA may increase proximal pressure, potentially worsening intracranial bleeding and intracranial pressure (ICP).');
+                if (p.contraPenetrating) contraindicationReasons.push('Penetrating neck or chest trauma: these supradiaphragmatic injuries may bleed more rapidly if REBOA raises proximal blood pressure, accelerating upper-body exsanguination.');
+                rec.rationale = `CONTRAINDICATION FLAG — ${contraindicationReasons.join(' ')} This simulator blocks the REBOA pathway for the selected flag(s); real-world decisions require clinical context and local protocols.`;
+            } 
+            // 2. Hemodynamically stable or non-shock state
+            else if (p.sbp > 90 && !p.peaArrest) {
+                rec.status = 'HOLD';
+                rec.targetZone = null;
+                rec.rationale = `HOLD: Patient Systolic BP is ${p.sbp} mmHg (Normotensive/Compensated). Invasive aortic occlusion is contraindicated when SBP > 90. Maintain aggressive balanced transfusion (1:1:1 MTP) and surgical prep.`;
+            } 
+            // 3. Zone 1 Indication: Abdominal free fluid, PEA arrest, or profound undetermined shock
+            else if (p.peaArrest || p.fastAbdomen) {
+                rec.status = 'INDICATED';
+                rec.targetZone = 1;
+                rec.catheterDepthCm = 42;
+                rec.maxMinutes = 15;
+                rec.rationale = p.peaArrest
+                    ? "URGENT (Zone 1): Exsanguinating traumatic PEA arrest. Zone 1 occlusion re-diverts 100% of residual cardiac output into coronary and carotid beds to restore spontaneous circulation (ROSC)."
+                    : "HIGH PRIORITY (Zone 1): Positive intraperitoneal fluid in profound shock (SBP < 70). Subdiaphragmatic aortic occlusion achieves definitive proximal control of non-compressible hepatic, splenic, or mesenteric hemorrhage.";
+            } 
+            // 4. Zone 3 Indication: Isolated pelvic or groin trauma
+            else if (p.fastPelvis && !p.fastAbdomen) {
+                rec.status = 'INDICATED';
+                rec.targetZone = 3;
+                rec.catheterDepthCm = 23;
+                rec.maxMinutes = 30;
+                rec.rationale = "INDICATED (Zone 3): Isolated severe pelvic crush fracture or groin junctional hemorrhage. Infrarenal occlusion arrests distal hemorrhage while sparing mesenteric and renal perfusion.";
+            } 
+            // 5. Default in refractory shock
+            else {
+                rec.status = 'INDICATED';
+                rec.targetZone = 1;
+                rec.catheterDepthCm = 40;
+                rec.maxMinutes = 15;
+                rec.rationale = "EMERGENCY (Zone 1): Refractory hemorrhagic shock with occult etiology. Occlude above celiac axis to safeguard cerebral/myocardial viability during exploratory laparotomy.";
+            }
+
+            renderAIVerdict();
+        }
+
+        function renderAIVerdict() {
+            const rec = AppState.aiRecommendation;
+
+            // Reset verdict classes
+            aiVerdictCard.className = "bg-icu-panel rounded-xl p-4 shadow-lg flex flex-col gap-3 relative overflow-hidden border-2 transition-all duration-300";
+
+            if (rec.status === 'CONTRAINDICATED') {
+                aiVerdictCard.classList.add('border-rose-600/70', 'glow-red');
+                verdictBadge.className = "text-xs font-mono font-bold px-2.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-600";
+                verdictBadge.textContent = "CONTRAINDICATED";
+                verdictDot.className = "relative inline-flex rounded-full h-3 w-3 bg-rose-500";
+                verdictPing.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75";
+                verdictTargetZone.className = "text-xl font-telemetry font-bold text-rose-400";
+                verdictTargetZone.textContent = "DO NOT PROCEED WITH REBOA";
+                applyRecommendationBtn.disabled = true;
+                applyRecommendationBtn.className = "w-full mt-1 py-2.5 px-4 rounded-lg bg-slate-800 text-slate-500 font-telemetry tracking-wider font-bold cursor-not-allowed border border-slate-700";
+                applyBtnLabel.textContent = "REBOA CONTRAINDICATED (ABORT)";
+            } else if (rec.status === 'HOLD') {
+                aiVerdictCard.classList.add('border-amber-500/60');
+                verdictBadge.className = "text-xs font-mono font-bold px-2.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-600";
+                verdictBadge.textContent = "MONITOR & HOLD";
+                verdictDot.className = "relative inline-flex rounded-full h-3 w-3 bg-amber-500";
+                verdictPing.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75";
+                verdictTargetZone.className = "text-xl font-telemetry font-bold text-amber-400";
+                verdictTargetZone.textContent = "CRITERIA NOT MET (SBP > 90)";
+                applyRecommendationBtn.disabled = true;
+                applyRecommendationBtn.className = "w-full mt-1 py-2.5 px-4 rounded-lg bg-slate-800 text-slate-500 font-telemetry tracking-wider font-bold cursor-not-allowed border border-slate-700";
+                applyBtnLabel.textContent = "HOLD BALLOON DEPLOYMENT";
+            } else {
+                aiVerdictCard.classList.add('border-emerald-500/70');
+                verdictBadge.className = "text-xs font-mono font-bold px-2.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500";
+                verdictBadge.textContent = "INDICATED";
+                verdictDot.className = "relative inline-flex rounded-full h-3 w-3 bg-emerald-500";
+                verdictPing.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75";
+                verdictTargetZone.className = "text-xl font-telemetry font-bold text-emerald-400";
+                verdictTargetZone.textContent = rec.targetZone === 1 ? "ZONE 1 OCCLUSION" : "ZONE 3 OCCLUSION";
+                applyRecommendationBtn.disabled = false;
+                applyRecommendationBtn.className = "w-full mt-1 py-2.5 px-4 rounded-lg bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-telemetry tracking-wider font-bold shadow-md transition flex items-center justify-center space-x-2";
+                applyBtnLabel.textContent = `PLACE BALLOON IN ZONE ${rec.targetZone}`;
+            }
+
+            verdictRationale.textContent = rec.rationale;
+            if (rec.status === 'INDICATED') {
+                targetDepth.textContent = rec.targetZone === 1 ? "~40-45 cm (Mid-Sternum)" : "~20-25 cm (Umbilicus)";
+                targetAccessPort.textContent = "Common Femoral Artery (7Fr Sheath)";
+                targetIschemiaLimit.textContent = rec.targetZone === 1 ? "15 min target" : "30 min target";
+            } else {
+                targetDepth.textContent = "—";
+                targetAccessPort.textContent = "—";
+                targetIschemiaLimit.textContent = "—";
+            }
+            renderDwellTimer();
+        }
+
+        // ==========================================
+        // 2. Anatomical SVG & Occlusion Mechanics
+        // ==========================================
+        function updateBalloonAnatomyVisuals() {
+            const { deployedZone, inflationPercent } = AppState.balloon;
+            const hasPlacedZone = deployedZone === 1 || deployedZone === 3;
+            const hasSelectedZone = hasPlacedZone && AppState.balloon.pendingZone === null;
+            catheterWire.setAttribute('opacity', hasPlacedZone ? '1' : '0');
+            if (!hasPlacedZone) catheterWire.setAttribute('d', 'M 245,595 L 230,530 L 180,430 L 180,165');
+
+            inflationSlider.disabled = !hasSelectedZone;
+            presetPreboaBtn.disabled = !hasSelectedZone;
+            presetCompleteBtn.disabled = !hasSelectedZone;
+            presetDeflateBtn.disabled = !hasSelectedZone || inflationPercent <= 0;
+            presetInstantDeflateBtn.disabled = !hasSelectedZone || inflationPercent <= 0;
+            [inflationSlider, presetPreboaBtn, presetCompleteBtn, presetDeflateBtn, presetInstantDeflateBtn].forEach((control) => {
+                control.classList.toggle('opacity-40', control.disabled);
+                control.classList.toggle('cursor-not-allowed', control.disabled);
+            });
+            presetPreboaBtn.classList.toggle('ring-2', hasSelectedZone && inflationPercent === 0);
+            presetPreboaBtn.classList.toggle('ring-cyan-300', hasSelectedZone && inflationPercent === 0);
+            presetPreboaBtn.classList.toggle('animate-pulse', hasSelectedZone && inflationPercent === 0);
+            presetCompleteBtn.classList.toggle('ring-2', hasSelectedZone && inflationPercent === 0);
+            presetCompleteBtn.classList.toggle('ring-rose-300', hasSelectedZone && inflationPercent === 0);
+            presetCompleteBtn.classList.toggle('animate-pulse', hasSelectedZone && inflationPercent === 0);
+
+            // Reset balloons
+            zone1Balloon.setAttribute('opacity', '0.15');
+            zone1Balloon.setAttribute('rx', '4');
+            zone1Balloon.setAttribute('ry', '12');
+
+            zone3Balloon.setAttribute('opacity', '0.15');
+            zone3Balloon.setAttribute('rx', '4');
+            zone3Balloon.setAttribute('ry', '12');
+
+            if (deployedZone === 1) {
+                // Animate balloon 1 width according to inflation
+                const balloonRadius = 4 + (inflationPercent / 100) * 11;
+                zone1Balloon.setAttribute('rx', balloonRadius.toString());
+                zone1Balloon.setAttribute('opacity', (0.3 + (inflationPercent / 100) * 0.7).toString());
+                catheterWire.setAttribute('d', 'M 245,595 L 230,530 L 180,430 L 180,165');
+            } else if (deployedZone === 3) {
+                const balloonRadius = 4 + (inflationPercent / 100) * 9.5;
+                zone3Balloon.setAttribute('rx', balloonRadius.toString());
+                zone3Balloon.setAttribute('opacity', (0.3 + (inflationPercent / 100) * 0.7).toString());
+                catheterWire.setAttribute('d', 'M 245,595 L 230,530 L 180,430 L 180,375');
+            }
+
+            // Distal Ischemia visual hue
+            if (deployedZone && inflationPercent > 10) {
+                ischemicOverlay.setAttribute('d', deployedZone === 1
+                    ? 'M 180,165 L 180,430 L 130,530 L 115,595 M 180,430 L 230,530 L 245,595'
+                    : 'M 180,375 L 180,430 L 130,530 L 115,595 M 180,430 L 230,530 L 245,595');
+                const ischemOp = (inflationPercent / 100) * 0.85;
+                ischemicOverlay.setAttribute('opacity', ischemOp.toString());
+            } else {
+                ischemicOverlay.setAttribute('d', '');
+                ischemicOverlay.setAttribute('opacity', '0');
+            }
+
+            // Status Badge update
+            if (AppState.balloon.pendingZone !== null) {
+                balloonStateBadge.textContent = `ZONE ${deployedZone} → ${AppState.balloon.pendingZone} AFTER DEFLATION`;
+                balloonStateBadge.className = "text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700";
+            } else if (!deployedZone) {
+                balloonStateBadge.textContent = "DEFLATED";
+                balloonStateBadge.className = "text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700";
+            } else if (inflationPercent === 0) {
+                balloonStateBadge.textContent = `ZONE ${deployedZone} PLACED • UNINFLATED`;
+                balloonStateBadge.className = "text-xs font-mono font-bold px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-700";
+            } else if (inflationPercent >= 90) {
+                balloonStateBadge.textContent = `ZONE ${deployedZone} FULL OCCLUSION (100%)`;
+                balloonStateBadge.className = "text-xs font-mono font-bold px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-600";
+            } else if (inflationPercent >= 40 && inflationPercent <= 70) {
+                balloonStateBadge.textContent = `ZONE ${deployedZone} pREBOA (${inflationPercent.toFixed(0)}%)`;
+                balloonStateBadge.className = "text-xs font-mono font-bold px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500";
+            } else {
+                balloonStateBadge.textContent = `ZONE ${deployedZone} PARTIAL (${inflationPercent.toFixed(0)}%)`;
+                balloonStateBadge.className = "text-xs font-mono font-bold px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500";
+            }
+
+            // Update Volume saline label
+            const salineVol = ((inflationPercent / 100) * (deployedZone === 1 ? 16 : 8)).toFixed(1);
+            inflationPctDisplay.innerHTML = `${Math.round(inflationPercent)}% <span class="text-xs text-slate-400">(${salineVol} mL Saline)</span>`;
+        }
+
+        function setOcclusionZone(zone) {
+            AppState.dwellTimer.reperfusionAlert = false;
+            if (AppState.balloon.deployedZone && AppState.balloon.deployedZone !== zone && AppState.balloon.inflationPercent > 0) {
+                AppState.balloon.pendingZone = zone;
+                requestGradualDeflation(0);
+                deflationStatus.textContent = `Zone ${zone} will be selected after gradual deflation to zero.`;
+                updateBalloonAnatomyVisuals();
+                return;
+            }
+            AppState.balloon.pendingZone = null;
+            if (AppState.balloon.deployedZone !== zone || AppState.balloon.inflationPercent === 0) {
+                AppState.balloon.deflationTargetPercent = null;
+                AppState.balloon.deflationElapsedSeconds = 0;
+                AppState.dwellTimer.seconds = 0;
+                AppState.dwellTimer.thresholdAlarmed = false;
+                AppState.dwellTimer.reperfusionAlert = false;
+                deflationStatus.textContent = 'Gradual deflation is idle.';
+            }
+            AppState.balloon.deployedZone = zone;
+            renderDwellTimer();
+            updateBalloonAnatomyVisuals();
+            playBeep(650, 0.15);
+        }
+
+        function requestGradualDeflation(targetPercent) {
+            const balloon = AppState.balloon;
+            cancelInflationAnimation();
+            if (!balloon.deployedZone || balloon.inflationPercent <= targetPercent) {
+                balloon.deflationTargetPercent = null;
+                balloon.deflationElapsedSeconds = 0;
+                balloon.inflationPercent = targetPercent;
+                inflationSlider.value = targetPercent;
+                deflationStatus.textContent = 'No gradual deflation needed at the selected level.';
+                updateBalloonAnatomyVisuals();
+                return;
+            }
+            balloon.deflationTargetPercent = targetPercent;
+            balloon.deflationElapsedSeconds = 0;
+            AppState.dwellTimer.reperfusionAlert = false;
+            deflationStatus.textContent = `Gradual deflation in progress: ≤1 mL per simulated minute (timer speed ${AppState.dwellTimer.speedMultiplier}x).`;
+            startDwellTimer();
+        }
+
+        function cancelInflationAnimation() {
+            if (AppState.balloon.inflationAnimationFrame !== null) {
+                cancelAnimationFrame(AppState.balloon.inflationAnimationFrame);
+                AppState.balloon.inflationAnimationFrame = null;
+            }
+        }
+
+        function animateInflationTo(targetPercent) {
+            const balloon = AppState.balloon;
+            if (!balloon.deployedZone || balloon.pendingZone !== null) return;
+            if (targetPercent === balloon.inflationPercent) return;
+            if (targetPercent < balloon.inflationPercent) {
+                requestGradualDeflation(targetPercent);
+                return;
+            }
+            cancelInflationAnimation();
+            balloon.deflationTargetPercent = null;
+            balloon.deflationElapsedSeconds = 0;
+            AppState.dwellTimer.reperfusionAlert = false;
+            const startPercent = balloon.inflationPercent;
+            const startTime = performance.now();
+            const durationMs = 5000;
+            deflationStatus.textContent = `Inflating gradually over 5 seconds (${startPercent.toFixed(0)}% → ${targetPercent}%).`;
+            startDwellTimer();
+
+            const animateStep = (now) => {
+                const progress = Math.min((now - startTime) / durationMs, 1);
+                balloon.inflationPercent = startPercent + ((targetPercent - startPercent) * progress);
+                inflationSlider.value = balloon.inflationPercent;
+                updateBalloonAnatomyVisuals();
+                renderDwellTimer();
+                if (progress < 1) {
+                    balloon.inflationAnimationFrame = requestAnimationFrame(animateStep);
+                } else {
+                    balloon.inflationPercent = targetPercent;
+                    inflationSlider.value = targetPercent;
+                    balloon.inflationAnimationFrame = null;
+                    deflationStatus.textContent = `Inflation complete at ${targetPercent}%.`;
+                    updateBalloonAnatomyVisuals();
+                    renderDwellTimer();
+                }
+            };
+            balloon.inflationAnimationFrame = requestAnimationFrame(animateStep);
+        }
+
+        // ==========================================
+        // 3. Dual Arterial Pressure Waveform Canvas
+        // ==========================================
+        let animFrameId = null;
+        let waveX = 0;
+        const waveHistoryProx = [];
+        const waveHistoryDist = [];
+
+        function resizeCanvas() {
+            const rect = waveformCanvas.parentElement.getBoundingClientRect();
+            waveformCanvas.width = rect.width;
+            waveformCanvas.height = rect.height;
+        }
+
+        // Arterial waveform generator (Systolic peak + dicrotic notch)
+        function calculateArterialPoint(phase, systolicVal, diastolicVal, isDicroticPreserved = true) {
+            // phase from 0 to 1
+            const span = systolicVal - diastolicVal;
+            if (phase < 0.22) {
+                // Rapid systolic upstroke
+                const t = phase / 0.22;
+                return diastolicVal + span * Math.sin((t * Math.PI) / 2);
+            } else if (phase < 0.38) {
+                // Early systolic decline to dicrotic notch
+                const t = (phase - 0.22) / 0.16;
+                const drop = span * 0.45;
+                return (diastolicVal + span) - (drop * t);
+            } else if (phase < 0.52 && isDicroticPreserved) {
+                // Dicrotic notch reflection bump (aortic valve closure)
+                const t = (phase - 0.38) / 0.14;
+                const notchFloor = diastolicVal + span * 0.55;
+                const bump = span * 0.15;
+                return notchFloor + bump * Math.sin(t * Math.PI);
+            } else {
+                // Diastolic runoff
+                const t = (phase - (isDicroticPreserved ? 0.52 : 0.38)) / (1.0 - (isDicroticPreserved ? 0.52 : 0.38));
+                const startRunoff = isDicroticPreserved ? (diastolicVal + span * 0.55) : (diastolicVal + span * 0.55);
+                return startRunoff * (1 - t) + diastolicVal * t;
+            }
+        }
+
+        function drawWaveforms() {
+            const ctx = waveformCanvas.getContext('2d');
+            const w = waveformCanvas.width;
+            const h = waveformCanvas.height;
+
+            if (w === 0 || h === 0) return;
+
+            // Clear slight trail for phosphor persistence
+            ctx.fillStyle = 'rgba(7, 11, 18, 0.2)';
+            ctx.fillRect(0, 0, w, h);
+
+            // Compute dynamic pressures based on base SBP and Balloon state
+            const baseSbp = AppState.patient.sbp;
+            const hr = AppState.patient.hr;
+            const { deployedZone, inflationPercent } = AppState.balloon;
+
+            // Proximal Boost: Occlusion causes immediate afterload spike (+20 to +50 mmHg MAP)
+            let proxSbp = baseSbp;
+            let proxDbp = Math.max(baseSbp * 0.65, 20);
+
+            if (deployedZone && inflationPercent > 0) {
+                const occlusionRatio = inflationPercent / 100;
+                const boost = (deployedZone === 1 ? 45 : 30) * occlusionRatio;
+                proxSbp = Math.min(baseSbp + boost, 145);
+                proxDbp = Math.min(proxDbp + (boost * 0.55), 90);
+            }
+            const proxMap = Math.round((proxSbp + 2 * proxDbp) / 3);
+
+            // Distal Fall: With 100% occlusion, distal pulse wave flatlines to near-zero venous return
+            let distSbp = baseSbp;
+            let distDbp = proxDbp;
+
+            if (deployedZone && inflationPercent > 0) {
+                const occlusionRatio = inflationPercent / 100;
+                distSbp = baseSbp * (1 - 0.88 * occlusionRatio);
+                distDbp = proxDbp * (1 - 0.92 * occlusionRatio);
+            }
+            const distMap = Math.round((distSbp + 2 * distDbp) / 3);
+
+            // Update Numerical Readouts
+            proxBpReadout.innerHTML = `${Math.round(proxSbp)} / ${Math.round(proxDbp)} <span class="text-xs text-cyan-400 font-normal">MAP: ${proxMap}</span>`;
+            distalBpReadout.innerHTML = `${Math.round(distSbp)} / ${Math.round(distDbp)} <span class="text-xs text-rose-400 font-normal">MAP: ${distMap}</span>`;
+
+            // Calculate current cycle position
+            const bps = hr / 60;
+            const sweepSpeedPixelsPerSec = 110;
+            const cycleDurationSec = 1 / (bps || 1);
+            
+            // Advance sweep head
+            waveX = (waveX + 2.4) % w;
+
+            // Compute current instantaneous value in heartbeat cycle
+            const timeNow = performance.now() / 1000;
+            const phase = (timeNow % cycleDurationSec) / cycleDurationSec;
+
+            // Scale to canvas heights: Upper half proximal (cyan), Lower half distal (rose)
+            const proxVal = calculateArterialPoint(phase, proxSbp, proxDbp, true);
+            const distVal = calculateArterialPoint(phase, distSbp, distDbp, inflationPercent < 70);
+
+            // Keep traces in a center lane so they never run behind the pressure readouts.
+            const plotTop = 54;
+            const plotBottom = h - 54;
+            const plotHeight = Math.max(plotBottom - plotTop, 40);
+            const mapY = (val) => plotBottom - ((val / 160) * (plotHeight * 0.85) + (plotHeight * 0.08));
+
+            const yProx = mapY(proxVal);
+            const yDist = mapY(distVal);
+
+            waveHistoryProx[Math.floor(waveX)] = yProx;
+            waveHistoryDist[Math.floor(waveX)] = yDist;
+
+            // Erase sweep ahead gap
+            ctx.fillStyle = '#070b12';
+            ctx.fillRect((waveX + 1) % w, 0, 16, h);
+
+            // Render Proximal Wave (Cyan)
+            ctx.beginPath();
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.2;
+            ctx.shadowColor = 'rgba(56, 189, 248, 0.4)';
+            ctx.shadowBlur = 6;
+            
+            for (let i = 0; i < w; i++) {
+                if (waveHistoryProx[i] !== undefined && Math.abs(i - waveX) > 4) {
+                    if (i === 0 || waveHistoryProx[i-1] === undefined) {
+                        ctx.moveTo(i, waveHistoryProx[i]);
+                    } else {
+                        ctx.lineTo(i, waveHistoryProx[i]);
+                    }
+                }
+            }
+            ctx.stroke();
+
+            // Render Distal Wave (Rose)
+            ctx.beginPath();
+            ctx.strokeStyle = '#fb7185';
+            ctx.lineWidth = 1.8;
+            ctx.shadowColor = 'rgba(251, 113, 133, 0.35)';
+            ctx.shadowBlur = 5;
+
+            for (let i = 0; i < w; i++) {
+                if (waveHistoryDist[i] !== undefined && Math.abs(i - waveX) > 4) {
+                    if (i === 0 || waveHistoryDist[i-1] === undefined) {
+                        ctx.moveTo(i, waveHistoryDist[i]);
+                    } else {
+                        ctx.lineTo(i, waveHistoryDist[i]);
+                    }
+                }
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0; // reset shadow
+
+            animFrameId = requestAnimationFrame(drawWaveforms);
+        }
+
+        // ==========================================
+        // 4. Ischemic Dwell Time Tracker & Alerts
+        // ==========================================
+        function startDwellTimer() {
+            if (AppState.dwellTimer.running) return;
+            AppState.dwellTimer.running = true;
+            AppState.dwellTimer.intervalId = setInterval(tickDwellTimer, 1000);
+        }
+
+        function stopDwellTimer() {
+            AppState.dwellTimer.running = false;
+            clearInterval(AppState.dwellTimer.intervalId);
+        }
+
+        function tickDwellTimer() {
+            const balloon = AppState.balloon;
+            if (!balloon.deployedZone) return;
+
+            const simulatedSeconds = AppState.dwellTimer.speedMultiplier;
+            if (balloon.inflationPercent > 0) {
+                AppState.dwellTimer.seconds += simulatedSeconds;
+                renderDwellTimer();
+            }
+
+            if (balloon.deflationTargetPercent !== null && balloon.inflationPercent > 0) {
+                balloon.deflationElapsedSeconds += simulatedSeconds;
+                let steps = Math.floor(balloon.deflationElapsedSeconds / 60);
+                balloon.deflationElapsedSeconds %= 60;
+                const capacityMl = balloon.deployedZone === 1 ? 16 : 8;
+                const targetVolumeMl = (balloon.deflationTargetPercent / 100) * capacityMl;
+                while (steps > 0 && balloon.inflationPercent > balloon.deflationTargetPercent) {
+                    const currentVolumeMl = (balloon.inflationPercent / 100) * capacityMl;
+                    const removedMl = Math.min(1, currentVolumeMl - targetVolumeMl);
+                    balloon.inflationPercent = Math.max(balloon.deflationTargetPercent, ((currentVolumeMl - removedMl) / capacityMl) * 100);
+                    steps--;
+                }
+                inflationSlider.value = balloon.inflationPercent;
+                updateBalloonAnatomyVisuals();
+                if (balloon.inflationPercent <= balloon.deflationTargetPercent) {
+                    balloon.inflationPercent = balloon.deflationTargetPercent;
+                    inflationSlider.value = balloon.inflationPercent;
+                    balloon.deflationTargetPercent = null;
+                    balloon.deflationElapsedSeconds = 0;
+                    deflationStatus.textContent = `Gradual deflation complete at ${Math.round(balloon.inflationPercent)}% (${((balloon.inflationPercent / 100) * capacityMl).toFixed(1)} mL).`;
+                    if (balloon.pendingZone !== null) {
+                        balloon.deployedZone = balloon.pendingZone;
+                        balloon.pendingZone = null;
+                        AppState.dwellTimer.seconds = 0;
+                        AppState.dwellTimer.thresholdAlarmed = false;
+                        deflationStatus.textContent = `Zone ${balloon.deployedZone} selected. Choose pREBOA or full REBOA.`;
+                        renderDwellTimer();
+                    }
+                    updateBalloonAnatomyVisuals();
+                }
+            }
+
+            if (balloon.inflationPercent === 0 && balloon.deflationTargetPercent === null) stopDwellTimer();
+        }
+
+        function renderDwellTimer() {
+            const sec = AppState.dwellTimer.seconds;
+            const mins = Math.floor(sec / 60);
+            const remSecs = sec % 60;
+
+            const timeStr = `${String(mins).padStart(2, '0')}:${String(remSecs).padStart(2, '0')}`;
+            dwellTimerText.textContent = timeStr;
+
+            const timerZone = AppState.balloon.deployedZone || AppState.aiRecommendation.targetZone || 1;
+            const inflationPercent = AppState.balloon.inflationPercent;
+            const isPartialOcclusion = inflationPercent >= 40 && inflationPercent <= 70;
+            const maxMins = isPartialOcclusion ? 120 : (timerZone === 1 ? 15 : 30);
+            dwellLimitText.textContent = AppState.aiRecommendation.status !== 'INDICATED'
+                ? "—"
+                : (isPartialOcclusion ? "2 hours (pREBOA)" : (timerZone === 1 ? "15 min (Zone 1)" : "30 min (Zone 3)"));
+            const progressRatio = Math.min(mins / maxMins, 1.25);
+            const progressPct = Math.round(progressRatio * 100);
+
+            dwellProgressBar.style.width = `${Math.min(progressPct, 100)}%`;
+
+            if (AppState.dwellTimer.reperfusionAlert) {
+                dwellRiskLabel.textContent = 'REPERFUSION RISK';
+                dwellRiskLabel.className = 'text-rose-300 font-bold animate-pulse';
+                dwellAlertBanner.classList.remove('hidden');
+                dwellAlertMsg.textContent = 'INSTANT DEFLATION SIMULATED: rapid reperfusion may cause ischemia-reperfusion injury and hemodynamic instability. Educational alert only; clinical management requires continuous monitoring and team protocol.';
+                return;
+            }
+
+            if (mins >= maxMins) {
+                dwellRiskLabel.textContent = `TARGET REACHED (${progressPct}%)`;
+                dwellRiskLabel.className = "text-rose-400 font-bold animate-pulse";
+                dwellAlertBanner.classList.remove('hidden');
+                dwellAlertMsg.textContent = `EDUCATIONAL SAFE LIMIT REACHED (${mins} min in Zone ${AppState.balloon.deployedZone}${isPartialOcclusion ? ', partial occlusion' : ', complete occlusion'}). Reassess promptly and prioritize definitive hemorrhage control; follow device-specific guidance and local protocol.`;
+                if (!AppState.dwellTimer.thresholdAlarmed) {
+                    playBeep(980, 0.25, 'sawtooth');
+                    AppState.dwellTimer.thresholdAlarmed = true;
+                }
+            } else if (mins >= (maxMins - 10)) {
+                dwellRiskLabel.textContent = `HIGH WARNING (${progressPct}%)`;
+                dwellRiskLabel.className = "text-amber-400 font-bold";
+                dwellAlertBanner.classList.remove('hidden');
+                dwellAlertMsg.textContent = `Within 10 minutes of ischemic boundary. Preload blood products and prepare for gradual balloon deflation.`;
+            } else {
+                dwellRiskLabel.textContent = `TOLERATED (${progressPct}%)`;
+                dwellRiskLabel.className = "text-emerald-400 font-bold";
+                dwellAlertBanner.classList.add('hidden');
+            }
+        }
+
+        function resetSimulator() {
+            cancelInflationAnimation();
+            stopDwellTimer();
+            Object.assign(AppState.patient, {
+                sbp: 120, hr: 85, fastAbdomen: true, fastPelvis: true, peaArrest: false,
+                contraThoracic: false, contraTamponade: false, contraTbi: false, contraPenetrating: false
+            });
+            Object.assign(AppState.aiRecommendation, {
+                status: 'INDICATED', targetZone: 1, rationale: '', catheterDepthCm: 42, maxMinutes: 15
+            });
+            Object.assign(AppState.balloon, {
+                deployedZone: null, inflationPercent: 0, pendingZone: null,
+                inflationAnimationFrame: null, deflationTargetPercent: null, deflationElapsedSeconds: 0
+            });
+            Object.assign(AppState.dwellTimer, {
+                seconds: 0, running: false, speedMultiplier: 1, intervalId: null,
+                thresholdAlarmed: false, reperfusionAlert: false
+            });
+            AppState.audio.muted = false;
+
+            sbpSlider.value = 120;
+            sbpDisplay.innerHTML = '120 <span class="text-xs text-slate-400">mmHg</span>';
+            hrSlider.value = 85;
+            hrDisplay.innerHTML = '85 <span class="text-xs text-slate-400">bpm</span>';
+            fastAbdomenCheck.checked = true;
+            fastPelvisCheck.checked = true;
+            peaArrestCheck.checked = false;
+            contraThoracicCheck.checked = false;
+            contraTamponadeCheck.checked = false;
+            contraTbiCheck.checked = false;
+            contraPenetratingCheck.checked = false;
+            inflationSlider.value = 0;
+            dwellTimeSpeedBtn.textContent = 'Speed: 1x';
+            dwellTimeSpeedBtn.classList.remove('text-amber-400', 'text-rose-400');
+            dwellTimeSpeedBtn.classList.add('text-cyan-300');
+            audioIcon.className = 'fa-solid fa-volume-high text-emerald-400';
+            audioStatusText.textContent = 'ALARM ACTIVE';
+            deflationStatus.textContent = 'Gradual deflation is idle.';
+
+            hostModalBackdrop.classList.add('hidden');
+            refDrawer.classList.add('translate-x-full');
+            refDrawerBackdrop.classList.add('hidden');
+            waveHistoryProx.length = 0;
+            waveHistoryDist.length = 0;
+            waveX = 0;
+            const ctx = waveformCanvas.getContext('2d');
+            ctx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+
+            runClinicalInference();
+            updateBalloonAnatomyVisuals();
+            renderDwellTimer();
+        }
+
+        // ==========================================
+        // 5. Event Listeners & UI Binding
+        // ==========================================
+        function initEventListeners() {
+            resetAppBtn.addEventListener('click', resetSimulator);
+
+            // SBP Slider
+            sbpSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                AppState.patient.sbp = val;
+                sbpDisplay.innerHTML = `${val} <span class="text-xs text-slate-400">mmHg</span>`;
+                runClinicalInference();
+            });
+
+            // HR Slider
+            hrSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                AppState.patient.hr = val;
+                hrDisplay.innerHTML = `${val} <span class="text-xs text-slate-400">bpm</span>`;
+            });
+
+            // Checkboxes
+            fastAbdomenCheck.addEventListener('change', (e) => {
+                AppState.patient.fastAbdomen = e.target.checked;
+                runClinicalInference();
+            });
+
+            fastPelvisCheck.addEventListener('change', (e) => {
+                AppState.patient.fastPelvis = e.target.checked;
+                runClinicalInference();
+            });
+
+            peaArrestCheck.addEventListener('change', (e) => {
+                AppState.patient.peaArrest = e.target.checked;
+                if (e.target.checked) {
+                    sbpSlider.value = 0;
+                    AppState.patient.sbp = 0;
+                    sbpDisplay.innerHTML = `0 <span class="text-xs text-slate-400">mmHg</span>`;
+                }
+                runClinicalInference();
+            });
+
+            contraThoracicCheck.addEventListener('change', (e) => {
+                AppState.patient.contraThoracic = e.target.checked;
+                runClinicalInference();
+            });
+
+            contraTamponadeCheck.addEventListener('change', (e) => {
+                AppState.patient.contraTamponade = e.target.checked;
+                runClinicalInference();
+            });
+
+            contraTbiCheck.addEventListener('change', (e) => {
+                AppState.patient.contraTbi = e.target.checked;
+                runClinicalInference();
+            });
+
+            contraPenetratingCheck.addEventListener('change', (e) => {
+                AppState.patient.contraPenetrating = e.target.checked;
+                runClinicalInference();
+            });
+
+            // AI Deploy Button
+            applyRecommendationBtn.addEventListener('click', () => {
+                initAudio();
+                if (AppState.aiRecommendation.status === 'INDICATED') {
+                    setOcclusionZone(AppState.aiRecommendation.targetZone);
+                }
+            });
+
+            // Zone Selection Buttons on Canvas
+            selectZone1Btn.addEventListener('click', () => {
+                initAudio();
+                setOcclusionZone(1);
+            });
+
+            selectZone3Btn.addEventListener('click', () => {
+                initAudio();
+                setOcclusionZone(3);
+            });
+
+            // Direct SVG click selection
+            zone1BalloonGroup.addEventListener('click', () => {
+                initAudio();
+                setOcclusionZone(1);
+            });
+            zone3BalloonGroup.addEventListener('click', () => {
+                initAudio();
+                setOcclusionZone(3);
+            });
+
+            // Inflation Slider
+            inflationSlider.addEventListener('input', (e) => {
+                initAudio();
+                const requestedPercent = parseFloat(e.target.value);
+                const currentPercent = AppState.balloon.inflationPercent;
+                if (requestedPercent < currentPercent) {
+                    e.target.value = currentPercent;
+                    requestGradualDeflation(requestedPercent);
+                    return;
+                }
+                if (requestedPercent > currentPercent) {
+                    e.target.value = currentPercent;
+                    animateInflationTo(requestedPercent);
+                    return;
+                }
+                return;
+            });
+
+            // Preset Buttons
+            presetDeflateBtn.addEventListener('click', () => {
+                initAudio();
+                requestGradualDeflation(0);
+            });
+
+            presetInstantDeflateBtn.addEventListener('click', () => {
+                initAudio();
+                if (!AppState.balloon.deployedZone || AppState.balloon.inflationPercent <= 0) return;
+                cancelInflationAnimation();
+                AppState.balloon.inflationPercent = 0;
+                AppState.balloon.deflationTargetPercent = null;
+                AppState.balloon.deflationElapsedSeconds = 0;
+                inflationSlider.value = 0;
+                AppState.dwellTimer.reperfusionAlert = true;
+                deflationStatus.textContent = 'Instant deflation applied. Reperfusion risk alert displayed in the ischemic dwell timer.';
+                updateBalloonAnatomyVisuals();
+                renderDwellTimer();
+                stopDwellTimer();
+                playBeep(980, 0.35, 'sawtooth');
+            });
+
+            presetPreboaBtn.addEventListener('click', () => {
+                initAudio();
+                if (!AppState.balloon.deployedZone || AppState.balloon.pendingZone !== null) return;
+                if (AppState.balloon.inflationPercent > 60) {
+                    requestGradualDeflation(60);
+                } else animateInflationTo(60);
+            });
+
+            presetCompleteBtn.addEventListener('click', () => {
+                initAudio();
+                if (!AppState.balloon.deployedZone || AppState.balloon.pendingZone !== null) return;
+                animateInflationTo(100);
+            });
+
+            // Dwell Speed Multiplier
+            dwellTimeSpeedBtn.addEventListener('click', () => {
+                const current = AppState.dwellTimer.speedMultiplier;
+                if (current === 1) {
+                    AppState.dwellTimer.speedMultiplier = 10;
+                    dwellTimeSpeedBtn.textContent = "Speed: 10x";
+                    dwellTimeSpeedBtn.classList.replace('text-cyan-300', 'text-amber-400');
+                } else if (current === 10) {
+                    AppState.dwellTimer.speedMultiplier = 60;
+                    dwellTimeSpeedBtn.textContent = "Speed: 60x";
+                    dwellTimeSpeedBtn.classList.replace('text-amber-400', 'text-rose-400');
+                } else {
+                    AppState.dwellTimer.speedMultiplier = 1;
+                    dwellTimeSpeedBtn.textContent = "Speed: 1x";
+                    dwellTimeSpeedBtn.classList.remove('text-amber-400', 'text-rose-400');
+                    dwellTimeSpeedBtn.classList.add('text-cyan-300');
+                }
+                if (AppState.balloon.deflationTargetPercent !== null) {
+                    deflationStatus.textContent = `Gradual deflation in progress: ≤1 mL per simulated minute (timer speed ${AppState.dwellTimer.speedMultiplier}x).`;
+                }
+            });
+
+            // Dwell Timer Reset
+            dwellResetBtn.addEventListener('click', () => {
+                AppState.dwellTimer.seconds = 0;
+                AppState.dwellTimer.thresholdAlarmed = false;
+                renderDwellTimer();
+            });
+
+            // Quick Scenario Presets
+            presetCase1.addEventListener('click', () => {
+                sbpSlider.value = 55;
+                AppState.patient.sbp = 55;
+                sbpDisplay.innerHTML = `55 <span class="text-xs text-slate-400">mmHg</span>`;
+                hrSlider.value = 135;
+                AppState.patient.hr = 135;
+                hrDisplay.innerHTML = `135 <span class="text-xs text-slate-400">bpm</span>`;
+                fastAbdomenCheck.checked = true;
+                AppState.patient.fastAbdomen = true;
+                fastPelvisCheck.checked = false;
+                AppState.patient.fastPelvis = false;
+                peaArrestCheck.checked = false;
+                AppState.patient.peaArrest = false;
+                contraThoracicCheck.checked = false;
+                AppState.patient.contraThoracic = false;
+                contraTamponadeCheck.checked = false;
+                AppState.patient.contraTamponade = false;
+                contraTbiCheck.checked = false;
+                AppState.patient.contraTbi = false;
+                contraPenetratingCheck.checked = false;
+                AppState.patient.contraPenetrating = false;
+                runClinicalInference();
+            });
+
+            presetCase2.addEventListener('click', () => {
+                sbpSlider.value = 65;
+                AppState.patient.sbp = 65;
+                sbpDisplay.innerHTML = `65 <span class="text-xs text-slate-400">mmHg</span>`;
+                hrSlider.value = 120;
+                AppState.patient.hr = 120;
+                hrDisplay.innerHTML = `120 <span class="text-xs text-slate-400">bpm</span>`;
+                fastAbdomenCheck.checked = false;
+                AppState.patient.fastAbdomen = false;
+                fastPelvisCheck.checked = true;
+                AppState.patient.fastPelvis = true;
+                peaArrestCheck.checked = false;
+                AppState.patient.peaArrest = false;
+                contraThoracicCheck.checked = false;
+                AppState.patient.contraThoracic = false;
+                contraTamponadeCheck.checked = false;
+                AppState.patient.contraTamponade = false;
+                contraTbiCheck.checked = false;
+                AppState.patient.contraTbi = false;
+                contraPenetratingCheck.checked = false;
+                AppState.patient.contraPenetrating = false;
+                runClinicalInference();
+            });
+
+            presetCase3.addEventListener('click', () => {
+                contraTamponadeCheck.checked = true;
+                AppState.patient.contraTamponade = true;
+                runClinicalInference();
+            });
+
+            // Host Guide Modal Listeners
+            openHostGuideBtn?.addEventListener('click', () => {
+                hostModalBackdrop.classList.remove('hidden');
+            });
+
+            closeHostModalBtn.addEventListener('click', () => {
+                hostModalBackdrop.classList.add('hidden');
+            });
+
+            hostModalBackdrop.addEventListener('click', (e) => {
+                if (e.target === hostModalBackdrop) {
+                    hostModalBackdrop.classList.add('hidden');
+                }
+            });
+
+            // Download HTML file trigger
+            downloadHtmlBtn.addEventListener('click', () => {
+                const docHtml = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+                const blob = new Blob([docHtml], { type: 'text/html' });
+                const downloadUrl = URL.createObjectURL(blob);
+                const tempLink = document.createElement('a');
+                tempLink.href = downloadUrl;
+                tempLink.download = 'reboa-simulator.html';
+                document.body.appendChild(tempLink);
+                tempLink.click();
+                document.body.removeChild(tempLink);
+                URL.revokeObjectURL(downloadUrl);
+            });
+
+            // Audio Mute Toggle
+            audioMuteBtn.addEventListener('click', () => {
+                initAudio();
+                AppState.audio.muted = !AppState.audio.muted;
+                if (AppState.audio.muted) {
+                    audioIcon.className = "fa-solid fa-volume-xmark text-amber-400";
+                    audioStatusText.textContent = "ALARM MUTED";
+                } else {
+                    audioIcon.className = "fa-solid fa-volume-high text-emerald-400";
+                    audioStatusText.textContent = "ALARM ACTIVE";
+                    playBeep(700, 0.1);
+                }
+            });
+
+            // Reference Drawer Toggles
+            openRefBtn.addEventListener('click', () => {
+                refDrawerBackdrop.classList.remove('hidden');
+                refDrawer.classList.remove('translate-x-full');
+            });
+
+            const closeDrawer = () => {
+                refDrawer.classList.add('translate-x-full');
+                refDrawerBackdrop.classList.add('hidden');
+            };
+
+            closeRefBtn.addEventListener('click', closeDrawer);
+            refDrawerBackdrop.addEventListener('click', closeDrawer);
+
+            // Responsive Canvas Resize
+            window.addEventListener('resize', () => {
+                resizeCanvas();
+            });
+        }
+
+        // ==========================================
+        // Initialization on Load
+        // ==========================================
+        window.onload = function () {
+            resizeCanvas();
+            initEventListeners();
+            runClinicalInference();
+            updateBalloonAnatomyVisuals();
+            renderDwellTimer();
+            drawWaveforms();
+        };
+    </script>
+</body>
+</html>
